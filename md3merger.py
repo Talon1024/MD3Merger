@@ -75,30 +75,56 @@ def unmd3_string(data):
     return data
 
 
+Cartesian = namedtuple("Cartesian", "x y z")
+
+
 class MD3Normal:
     @staticmethod
     def encode(normal=(0,0,0), gzdoom=True):
-        from math import atan2, acos, pi
+        from math import atan2, acos, pi, sqrt
 
-        lng = int(atan2(normal[1], normal[0]) * 127.5 / pi) & 0xff
-        lat = int(acos(normal[2]) * 127.5 / pi) & 0xff
+        normal = Cartesian(*normal)
+
+        # Normalize vector
+        length = sqrt(
+            normal.x * normal.x +
+            normal.y * normal.y +
+            normal.z * normal.z
+        )
+        normal = Cartesian(
+            normal.x / length,
+            normal.y / length,
+            normal.z / length
+        )
+
+        lng = int(atan2(normal.y, normal.x) * 127.5 / pi) & 0xff
+        lat = int(acos(normal.z) * 127.5 / pi) & 0xff
 
         if not gzdoom:
-            if normal[0] == 0 and normal[1] == 0:
-                if normal[2] > 0:
-                    lat, lng = 0, 0
+            if normal.x == 0 and normal.y == 0:
+                if normal.z > 0:
+                    lng, lat = 0, 0
                 else:
-                    lat, lng = 0, 128
+                    lng, lat = 0, 128
         return struct.pack("<2B", lat, lng)
 
     @staticmethod
     def decode(latlong=0, gzdoom=False):
-        from math import cos, sin, pi
         latlongbytes = struct.pack("<h", latlong)
-        lat, lng = struct.unpack("<2B", latlongbytes)
+        lng, lat = struct.unpack("<2b", latlongbytes)
+        return MD3Normal.decode_euler(lat, lng)
+
+    @staticmethod
+    def decode_euler(lat=0, lng=0, gzdoom=False):
+        from math import cos, sin, pi
         lat *= pi / 128
         lng *= pi / 128
-        normal = (cos(lat) * sin(lng), sin(lat) * sin(lng), cos(lng))
+        normal = Cartesian(
+            cos(lat) * sin(lng),
+            sin(lat) * sin(lng),
+            cos(lng)
+        )
+        return normal
 
 
 class Transform:
@@ -499,75 +525,76 @@ class MergedModel(MD3Model):
         # Add the vertices from this surface to the existing surface
 
 
-# Cache - re-use loaded models
-MD3Cache = {}
+if __name__ == "__main__":
+    # Cache - re-use loaded models
+    MD3Cache = {}
 
-ParsedModelArgument = namedtuple(
-    "ParsedModelArgument", "filename x y z yaw pitch roll")
-
-
-class MyQueue:
-    def __init__(self, data=[], index=0):
-        self.data = data
-        self.index = index
-
-    def add(self, element):
-        if self.index < len(self.data):
-            self.data[self.index] = element
+    def add_model(model_filename):
+        if model_filename in MD3Cache:
+            model = MD3Cache[model_filename]
         else:
-            self.append(element)
-        self.index += 1
+            model = MD3Model.from_stream(open(model_filename, "rb"))
+            MD3Cache[model_filename] = model
+        return model
+
+    ParsedModelArgument = namedtuple(
+        "ParsedModelArgument", "filename x y z yaw pitch roll")
 
 
-def model_argument(argument):
-    # argument.md3@x@y@z|y|p|r
-    filename_length = 0
-    coordinates = {
-        "@": MyQueue(["0", "0", "0"]),
-        "|": MyQueue(["0", "0", "0"])
-    }
-    subarguments = []
-    coordinate_start = 0
-    # Parse position
-    pos = 0
-    # Collect sub-arguments (position, orientation)
-    while pos < len(argument):
-        if argument[pos] in coordinates:
-            if filename_length == 0:
-                filename_length = pos
-            if coordinate_start > 0:
-                subarguments.append(argument[coordinate_start:pos])
-            coordinate_start = pos
-        pos += 1
-    if filename_length == 0:
-        filename_length = pos
-    if coordinate_start > 0:
-        subarguments.append(argument[coordinate_start:pos])
-    # Parse sub-arguments
-    for element in subarguments:
-        element_type = element[0]
-        coordinates[element_type].add(element[1:])
-    filename = argument[0:filename_length]
-    x, y, z = tuple(map(float, coordinates["@"].data))
-    yaw, pitch, roll = tuple(map(float, coordinates["|"].data))
-    return ParsedModelArgument(filename, x, y, z, yaw, pitch, roll)
+    class MyQueue:
+        def __init__(self, data=[], index=0):
+            self.data = data
+            self.index = index
+
+        def add(self, element):
+            if self.index < len(self.data):
+                self.data[self.index] = element
+            else:
+                self.append(element)
+            self.index += 1
 
 
-parser = argparse.ArgumentParser(
-    description="Merge multiple Quake 3 MD3 models")
-parser.add_argument("models", nargs="+", type=model_argument)
-parser.add_argument("--frames", type=int, help="Maximum animation frames")
-parser.add_argument("out_model", help="The output MD3 file")
-parsed_args = parser.parse_args()
+    def model_argument(argument):
+        # argument.md3@x@y@z|y|p|r
+        filename_length = 0
+        coordinates = {
+            "@": MyQueue(["0", "0", "0"]),
+            "|": MyQueue(["0", "0", "0"])
+        }
+        subarguments = []
+        coordinate_start = 0
+        # Parse position
+        pos = 0
+        # Collect sub-arguments (position, orientation)
+        while pos < len(argument):
+            if argument[pos] in coordinates:
+                if filename_length == 0:
+                    filename_length = pos
+                if coordinate_start > 0:
+                    subarguments.append(argument[coordinate_start:pos])
+                coordinate_start = pos
+            pos += 1
+        if filename_length == 0:
+            filename_length = pos
+        if coordinate_start > 0:
+            subarguments.append(argument[coordinate_start:pos])
+        # Parse sub-arguments
+        for element in subarguments:
+            element_type = element[0]
+            coordinates[element_type].add(element[1:])
+        filename = argument[0:filename_length]
+        x, y, z = tuple(map(float, coordinates["@"].data))
+        yaw, pitch, roll = tuple(map(float, coordinates["|"].data))
+        return ParsedModelArgument(filename, x, y, z, yaw, pitch, roll)
 
-def add_model(model_filename):
-    if model_filename in MD3Cache:
-        model = MD3Cache[model_filename]
-    else:
-        model = MD3Model.from_stream(open(model_filename, "rb"))
-        MD3Cache[model_filename] = model
-    return model
 
-models = map(add_model, parsed_args.models)
+    parser = argparse.ArgumentParser(
+        description="Merge multiple Quake 3 MD3 models")
+    parser.add_argument("models", nargs="+", type=model_argument)
+    parser.add_argument("--frames", type=int, help="Maximum animation frames")
+    parser.add_argument("out_model", help="The output MD3 file")
+    parsed_args = parser.parse_args()
 
-out_model = MergedModel(parsed_args.frames, parsed_args.out_model)
+    models = map(add_model, parsed_args.models)
+
+    out_model = MergedModel(parsed_args.frames, parsed_args.out_model)
