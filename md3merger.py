@@ -496,33 +496,36 @@ class MergedModel(MD3Model):
     def __init__(self, max_frames=-1, name=b""):
         super().__init__(name)
         self.max_frames = -1
-        self.surface_frames = 0
+        self.surface_frames = 0  # Number of frames each surface should have
         self.texture_surfaces = {}
+        self.surface_transforms = []
 
     def add_model(self, model, transform=None):
-        pass
+        for surface in model.surfaces:
+            self.add_surface(surface, transform)
+        self.tags += model.tags
+
+    def fix_surface_animations(self):
+        for surface in self.surfaces:
+            surface_frames = surface.get_frames()
+            if surface_frames != self.surface_frames:
+                # Surface has more frames, so truncate the animation
+                if surface_frames > self.surface_frames:
+                    max_vertex = len(surface.texcoords) * self.surface_frames
+                    surface.vertices = surface.vertices[0:max_vertex]
+                # Surface has fewer frames, so extend animation from last frame
+                else:
+                    missing_frames = self.surface_frames - surface_frames
+                    last_frame_verts = surface.vertices[
+                        (surface_frames - 1) * len(surface.texcoords):-1]
+                    surface.vertices += last_frame_verts * missing_frames
 
     def add_surface(self, surface, transform=None):
         if surface.texture not in self.texture_surfaces:
-            self.texture_surfaces[surface.texture] = surface
-        surface_frames = surface.get_frames()
-        # Ensure the new surface has at least as many frames as the maximum
-        if self.surface_frames == 0:
-            self.surface_frames = surface.get_frames()
-        else:
-            self.surface_frames = max(self.surface_frames, surface_frames)
-            if self.max_frames >= 0:
-                self.surface_frames = min(self.surface_frames, self.max_frames)
-        # Extend surface animation to have more frames, if necessary
-        if surface_frames != self.surface_frames:
-            if surface_frames > self.surface_frames:
-                max_vertex = len(surface.texcoords) * self.surface_frames
-                surface.vertices = surface.vertices[0:max_vertex]
-            else:
-                # Copy last frame
-                last_frame_verts = surface.vertices[
-                    (surface_frames - 1) * len(surface.texcoords):-1]
-        # Add the vertices from this surface to the existing surface
+            surflist = self.texture_surfaces.setdefault(surface.texture, [])
+            surflist.append(surface)
+        self.surfaces.append(surface)
+        self.surface_transforms.append(transform)
 
 
 if __name__ == "__main__":
