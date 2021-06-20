@@ -200,7 +200,7 @@ class MD3Model:
         stream.seek(stream.tell() + 4)  # Skip version number
         name = unmd3_string(stream.read(64))
         (num_frames, num_tags, num_surfaces, offset_frames, offset_tags,
-         offset_surfaces, offset_end) = (
+         offset_surfaces) = (
              struct.unpack("<4x3i4x4i", stream.read(36)))
 
         def read_frames(count):
@@ -329,6 +329,7 @@ class MD3Tag:
         axes = (struct.unpack("<3f", stream.read(12)) for axis in range(3))
         return MD3Tag(position, *axes, name)
 
+    @staticmethod
     def from_bytes(data):
         with io.BytesIO(data) as stream:
             return MD3Tag.from_stream(stream)
@@ -410,19 +411,18 @@ class MD3Surface:
         magic_id = stream.read(4)
         if magic_id != b"IDP3":
             return  # Not a valid surface
-        name = unmd3_string(stream.read(MAX_QPATH))
-        stream.seek(stream.tell() + 4)  # Skip flags
+        stream.seek(stream.tell() + 4 + MAX_QPATH)  # Skip flags and name
         frame_count, shader_count, vert_count, tri_count = (
             struct.unpack("<4i", stream.read(16))
         )
-        offset_tris, offset_shaders, offset_tcs, offset_verts, offset_end = (
-            struct.unpack("<5i", stream.read(20))
+        offset_tris, offset_shaders, offset_tcs, offset_verts = (
+            struct.unpack("<4i", stream.read(20))
         )
 
         def read_shaders(count):
             # Only read the first shader
             shader = unmd3_string(stream.read(MAX_QPATH))
-            shader_index = struct.unpack("<i", stream.read(4))
+            stream.seek(stream.tell() + 4)  # Skip shader index
             # Skip the other shaders
             while count > 0:
                 stream.seek(stream.tell() + MAX_QPATH + 4)
@@ -553,7 +553,7 @@ if __name__ == "__main__":
             if self.index < len(self.data):
                 self.data[self.index] = element
             else:
-                self.append(element)
+                self.data.append(element)
             self.index += 1
 
 
