@@ -201,7 +201,7 @@ class MD3Model:
         name = unmd3_string(stream.read(64))
         (num_frames, num_tags, num_surfaces, offset_frames, offset_tags,
          offset_surfaces) = (
-             struct.unpack("<4x3i4x4i", stream.read(36)))
+             struct.unpack("<4x3i4x3i4x", stream.read(36)))
 
         def read_frames(count):
             frames = []
@@ -416,7 +416,7 @@ class MD3Surface:
             struct.unpack("<4i", stream.read(16))
         )
         offset_tris, offset_shaders, offset_tcs, offset_verts = (
-            struct.unpack("<4i", stream.read(20))
+            struct.unpack("<4i4x", stream.read(20))
         )
 
         def read_shaders(count):
@@ -458,7 +458,7 @@ class MD3Surface:
         def read_verts(count):
             verts = []
             while count > 0:
-                vertex = struct.unpack("<4h")
+                vertex = struct.unpack("<4h", stream.read(8))
                 verts.append(MD3Vertex(vertex))
                 count -= 1
             return {
