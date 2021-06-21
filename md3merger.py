@@ -364,6 +364,9 @@ class MD3Surface:
         return vert_count % base_vert_count == 0
 
     def get_frames(self):
+        # Texture coordinates and vertices are "parallel arrays" for the first
+        # frame, so the number of frames can be calculated by dividing the
+        # length of the texture coordinates by the length of the vertices
         tc_count = len(self.texcoords)
         vert_count = len(self.vertices)
         return vert_count // tc_count
@@ -506,7 +509,7 @@ class MD3Surface:
 class MergedModel(MD3Model):
     def __init__(self, max_frames=-1, name=b""):
         super().__init__(name)
-        self.max_frames = -1
+        self.max_frames = max_frames
         self.surface_frames = 0  # Number of frames each surface should have
         self.texture_surfaces = {}
         self.surface_transforms = []
@@ -516,20 +519,24 @@ class MergedModel(MD3Model):
             self.add_surface(surface, transform)
         self.tags += model.tags
 
-    def fix_surface_animations(self):
-        for surface in self.surfaces:
-            surface_frames = surface.get_frames()
-            if surface_frames != self.surface_frames:
-                # Surface has more frames, so truncate the animation
-                if surface_frames > self.surface_frames:
-                    max_vertex = len(surface.texcoords) * self.surface_frames
-                    surface.vertices = surface.vertices[0:max_vertex]
-                # Surface has fewer frames, so extend animation from last frame
-                else:
-                    missing_frames = self.surface_frames - surface_frames
-                    last_frame_verts = surface.vertices[
-                        (surface_frames - 1) * len(surface.texcoords):-1]
-                    surface.vertices += last_frame_verts * missing_frames
+    def fix_surface_animations(self, surface):
+        # Ensure a surface has the required amount of frames
+        surface_frames = surface.get_frames()
+        if surface_frames != self.surface_frames:
+            # Surface has more frames, so truncate the animation
+            if surface_frames > self.surface_frames:
+                max_vertex = len(surface.texcoords) * self.surface_frames
+                surface.vertices = surface.vertices[0:max_vertex]
+            # Surface has fewer frames, so extend animation from last frame
+            else:
+                missing_frames = self.surface_frames - surface_frames
+                last_frame_verts = surface.vertices[
+                    (surface_frames - 1) * len(surface.texcoords):-1]
+                surface.vertices += last_frame_verts * missing_frames
+
+    def apply_transform(self, surface, transform):
+        # Move all of a surface's vertices based on a transformation matrix
+        pass
 
     def add_surface(self, surface, transform=None):
         if surface.texture not in self.texture_surfaces:
@@ -537,6 +544,37 @@ class MergedModel(MD3Model):
             surflist.append(surface)
         self.surfaces.append(surface)
         self.surface_transforms.append(transform)
+
+    def preprocess(self):
+        # Pre-process surfaces: apply transformations, and fix the animations
+        for surface, transform in zip(self.surfaces, self.surface_transforms):
+            self.apply_transform(surface, transform)
+            self.fix_surface_animations(surface)
+        # Rebuild surfaces and frames
+        self.surfaces = []
+        self.frames = []
+        for texture, surflist in self.texture_surfaces.items():
+            new_surface = MD3Surface(texture)
+            # Ensure triangles from each surface reference the correct vertex
+            tri_add = 0
+            # Add triangles and UVs from the surface - these are only for the
+            # first frame.
+            for surface in surflist:
+                new_surface.texcoords += surface.texcoords
+                for tri in surface.triangles:
+                    new_tri = (vertex + tri_add for vertex in tri)
+                    new_surface.triangles += new_tri
+                tri_add += len(surface.triangles)
+            # Add vertices from each frame in each surface
+            for frame in range(self.surface_frames):
+                for surface in surflist:
+                    verts_per_frame = len(surface.texcoords)
+                    new_surface.vertices += (
+                        surface.vertices[
+                            frame * verts_per_frame :
+                            (frame + 1) * verts_per_frame
+                        ])
+            self.surfaces.append(new_surface)
 
 
 if __name__ == "__main__":
