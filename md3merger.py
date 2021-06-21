@@ -4,6 +4,9 @@ import argparse
 import struct
 import io
 from collections import namedtuple
+from array import array
+from math import atan2, acos, pi, sqrt
+from itertools import accumulate
 
 # Constants for MD3
 MAX_QPATH = 64
@@ -80,9 +83,7 @@ Cartesian = namedtuple("Cartesian", "x y z")
 
 class MD3Normal:
     @staticmethod
-    def encode(normal=(0,0,0), gzdoom=True):
-        from math import atan2, acos, pi, sqrt
-
+    def encode(normal=(0, 0, 0), gzdoom=True):
         normal = Cartesian(*normal)
 
         # Normalize vector
@@ -109,13 +110,13 @@ class MD3Normal:
         return struct.pack("<2B", lat, lng)
 
     @staticmethod
-    def decode(latlong=0, gzdoom=False):
+    def decode(latlong=0):
         latlongbytes = struct.pack("<h", latlong)
         lng, lat = struct.unpack("<2b", latlongbytes)
         return MD3Normal.decode_euler(lat, lng)
 
     @staticmethod
-    def decode_euler(lat=0, lng=0, gzdoom=False):
+    def decode_euler(lat=0, lng=0):
         from math import cos, sin, pi
         lat *= pi / 128
         lng *= pi / 128
@@ -526,12 +527,16 @@ class MergedModel(MD3Model):
         self.max_frames = max_frames
         self.surface_frames = 0  # Number of frames each surface should have
         self.texture_surfaces = {}
+        self.frame_names = {}
         self.surface_transforms = []
 
     def add_model(self, model, transform=None):
         for surface in model.surfaces:
             self.add_surface(surface, transform)
         self.tags += model.tags
+        for index, frame in enumerate(model.frames):
+            if frame.name != b"":
+                self.frame_names[index] = frame.name.decode("utf-8")
 
     def fix_surface_animations(self, surface):
         # Ensure a surface has the required amount of frames
@@ -589,6 +594,38 @@ class MergedModel(MD3Model):
                             (frame + 1) * verts_per_frame
                         ])
             self.surfaces.append(new_surface)
+        # Rebuild frames
+        for frame_num in range(self.surface_frames):
+            x_coords = array("h")
+            y_coords = array("h")
+            z_coords = array("h")
+            # There's probably a better way to do this, but I don't know it.
+            for surface in self.surfaces:
+                verts_per_frame = len(surface.texcoords)
+                frame_verts = surface.vertices[
+                    frame_num * verts_per_frame :
+                    (frame_num + 1) * verts_per_frame
+                ]
+                for vertex in frame_verts:
+                    x_coords.append(vertex.x)
+                    y_coords.append(vertex.y)
+                    z_coords.append(vertex.z)
+            coords = (x_coords, y_coords, z_coords)
+            bounds_min = [min(co) / MD3_XYZ_SCALE for co in coords]
+            bounds_max = [max(co) / MD3_XYZ_SCALE for co in coords]
+            frame_name = self.frame_names.setdefault(frame_num, "")
+            radius = max(sqrt(
+                bounds_min[0] * bounds_min[0] +
+                bounds_min[1] * bounds_min[1] +
+                bounds_min[2] * bounds_min[2]
+            ), sqrt(
+                bounds_max[0] * bounds_max[0] +
+                bounds_max[1] * bounds_max[1] +
+                bounds_max[2] * bounds_max[2]
+            ))
+            frame = MD3Frame(
+                radius, (0, 0, 0), bounds_min, bounds_max, frame_name)
+            self.frames.append(frame)
 
 
 if __name__ == "__main__":
@@ -601,7 +638,7 @@ if __name__ == "__main__":
         else:
             model = MD3Model.from_stream(open(model_filename, "rb"))
             MD3Cache[model_filename] = model
-        return model
+        return model.clone()
 
     ParsedModelArgument = namedtuple(
         "ParsedModelArgument", "filename x y z yaw pitch roll")
