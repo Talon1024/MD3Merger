@@ -6,7 +6,6 @@ import io
 from collections import namedtuple
 from array import array
 from math import atan2, acos, pi, sqrt
-from itertools import accumulate
 
 # Constants for MD3
 MAX_QPATH = 64
@@ -128,18 +127,35 @@ class MD3Normal:
         return normal
 
 
+class Matrix:
+    def __init__(self, dimension=(3, 3), elements=None):
+        pass
+    
+    def __matmul__(self, other):
+        pass
+
+
 class Transform:
     def __init__(self,
                  position=(0,0,0),
                  angle=0,
                  pitch=0,
                  roll=0):
-        self.position = position
+        self.position = Cartesian(position)
         self.angle = angle
         self.pitch = pitch
         self.roll = roll
+    
+    def angle_matrix(self):
+        pass
 
-    def to_matrix(self):
+    def pitch_matrix(self):
+        pass
+
+    def roll_matrix(self):
+        pass
+
+    def rotation_matrix(self):
         pass
 
 
@@ -555,7 +571,17 @@ class MergedModel(MD3Model):
 
     def apply_transform(self, surface, transform):
         # Move all of a surface's vertices based on a transformation matrix
-        pass
+        for index in range(len(surface.vertices)):
+            newx = surface.vertices[index].x
+            newy = surface.vertices[index].y
+            newz = surface.vertices[index].z
+            newn = surface.vertices[index].n
+            # Apply rotation
+            # Apply position
+            newx += transform.position.x
+            newy += transform.position.y
+            newz += transform.position.z
+            surface.vertices[index] = MD3Vertex(newx, newy, newz, newn)
 
     def add_surface(self, surface, transform=None):
         if surface.texture not in self.texture_surfaces:
