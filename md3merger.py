@@ -179,6 +179,13 @@ class MD3Model:
             surfaces_offset,
             eof_offset
         )
+        self.preprocess()
+        for frame in self.frames:
+            data += frame.get_data()
+        for tag in self.tags:
+            data += tag.get_data()
+        for surface in self.surfaces:
+            data += surface.get_data()
         return bytes(data)
 
     def get_size(self):
@@ -190,6 +197,10 @@ class MD3Model:
         size += 112 * len(self.tags)
         size += sum([x.get_size() for x in self.surfaces])
         return size
+
+    # So that this can be overridden by sub-classes
+    def preprocess(self):
+        pass
 
     @staticmethod
     def from_stream(stream):
@@ -275,7 +286,7 @@ class MD3Frame:
         data += Vector3.to_bytes(*self.origin)
         data += struct.pack("<f", self.radius)
         data += md3_string(self.name, 16)
-        return data
+        return bytes(data)
 
     def get_size(self):
         return 56  # 4 * 10 + 16
@@ -317,7 +328,7 @@ class MD3Tag:
             for coordinate in axis:
                 data[pos:pos+4] = struct.pack("<f", coordinate)
                 pos += 4
-        return data
+        return bytes(data)
 
     def get_size(self):
         return 112  # 4 * 12 + MAX_QPATH
@@ -392,7 +403,7 @@ class MD3Surface:
         data += tri_data
         data += tc_data
         data += vert_data
-        return data
+        return bytes(data)
 
     def get_size(self):
         tri_count = len(self.triangles)
