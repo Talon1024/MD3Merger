@@ -201,6 +201,13 @@ class MD3Model:
     # So that this can be overridden by sub-classes
     def preprocess(self):
         pass
+    
+    def clone(self):
+        new_model = MD3Model(self.name)
+        new_model.surfaces = [s.clone() for s in self.surfaces]
+        new_model.frames = self.frames[:]
+        new_model.tags = self.tags[:]
+        return new_model
 
     @staticmethod
     def from_stream(stream):
@@ -418,6 +425,13 @@ class MD3Surface:
         size += tc_count * 8  # Texture coordinates - 2 floats each
         size += vert_count * 8  # Vertex positions - 4 shorts each
         return size
+    
+    def clone(self):
+        new_surface = MD3Surface(self.texture.decode())
+        new_surface.triangles = self.triangles[:]
+        new_surface.vertices = self.vertices[:]
+        new_surface.texcoords = self.texcoords[:]
+        return new_surface
 
     @staticmethod
     def from_stream(stream):
