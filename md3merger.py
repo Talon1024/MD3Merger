@@ -471,12 +471,11 @@ class MD3Surface:
         data = bytearray(b"IDP3" + md3_string(self.texture, MAX_QPATH))
         tri_count = len(self.triangles)
         tc_count = len(self.texcoords)
-        # The first "0" represents the "flags", which seem to be unused in the
-        # MD3 format. The "1" is the number of surfaces, and I don't see why
+        # The first 0 represents the "flags", which seem to be unused in the
+        # MD3 format. The 1 is the number of shaders, and I don't see why
         # there needs to be any more than 1. Also, tc_count is used instead of
         # vert_count because tc_count is the number of vertices for one frame
         data += struct.pack("<5i", 0, self.frames, 1, tc_count, tri_count)
-        shaders_offset = len(data)
         shader_data = (
             md3_string(self.texture, MAX_QPATH) +
             struct.pack("<i", 0))
@@ -489,6 +488,8 @@ class MD3Surface:
         tc_data = b"".join([
             struct.pack("<2f", *tc) for tc in self.texcoords
         ])
+        # Ensure data offset numbers point to AFTER the offset themselves
+        shaders_offset = len(data) + struct.calcsize("<5i")
         tris_offset = shaders_offset + len(shader_data)
         tc_offset = tris_offset + len(tri_data)
         verts_offset = tc_offset + len(tc_data)
