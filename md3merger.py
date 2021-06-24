@@ -722,15 +722,10 @@ class MergedModel(MD3Model):
             bounds_min = [min(co) / MD3_XYZ_SCALE for co in coords]
             bounds_max = [max(co) / MD3_XYZ_SCALE for co in coords]
             frame_name = self.frame_names.setdefault(frame_num, "")
-            radius = max(sqrt(
-                bounds_min[0] * bounds_min[0] +
-                bounds_min[1] * bounds_min[1] +
-                bounds_min[2] * bounds_min[2]
-            ), sqrt(
-                bounds_max[0] * bounds_max[0] +
-                bounds_max[1] * bounds_max[1] +
-                bounds_max[2] * bounds_max[2]
-            ))
+            radius = max(
+                sqrt(sum(map(lambda a: a * a, bounds_min))),
+                sqrt(sum(map(lambda a: a * a, bounds_max))),
+            )
             frame = MD3Frame(
                 radius, (0, 0, 0), bounds_min, bounds_max, frame_name)
             self.frames.append(frame)
@@ -740,13 +735,20 @@ if __name__ == "__main__":
     # Cache - re-use loaded models
     MD3Cache = {}
 
-    def add_model(model_filename):
+    def add_model(model_arg):
+        model_filename = model_arg.filename
         if model_filename in MD3Cache:
             model = MD3Cache[model_filename]
         else:
             model = MD3Model.from_stream(open(model_filename, "rb"))
             MD3Cache[model_filename] = model
-        return model.clone()
+        transform = Transform(
+            (model_arg.x, model_arg.y, model_arg.z),
+            model_arg.yaw, model_arg.pitch, model_arg.roll
+        )
+        if all(map(lambda x: x == 0, model_arg[1:])):
+            transform = None
+        return model.clone(), transform
 
     ParsedModelArgument = namedtuple(
         "ParsedModelArgument", "filename x y z yaw pitch roll")
@@ -806,6 +808,12 @@ if __name__ == "__main__":
     parser.add_argument("out_model", help="The output MD3 file")
     parsed_args = parser.parse_args()
 
-    models = map(add_model, parsed_args.models)
+    in_models = map(add_model, parsed_args.models)
 
     out_model = MergedModel(parsed_args.frames, parsed_args.out_model)
+    for in_model in in_models:
+        out_model.add_model(in_model[0], in_model[1])
+    out_filename = parsed_args.out_model
+    with open(out_filename, "wb") as out_file:
+        out_data = out_model.get_data()
+        out_file.write(out_data)
