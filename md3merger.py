@@ -139,6 +139,7 @@ class Matrix:
             self.elements[0:len(elements)] = elements[:]
 
     def __matmul__(self, other):
+        "Multiply this matrix by another matrix"
         if not isinstance(other, Matrix):
             return None
         if self.columns != other.rows:
@@ -152,6 +153,20 @@ class Matrix:
                 new_matrix.elements[row][col] = (
                     sum(map(lambda a, b: a * b, row_vector, column_vector)))
         return new_matrix
+
+    def __mul__(self, other):
+        "Multiply this matrix by a scalar"
+        new_matrix = Matrix(self.rows, self.columns)
+        for row_index in range(self.rows):
+            for column_index in range(self.columns):
+                new_matrix.elements[row_index][column_index] = (
+                    self.elements[row_index][column_index] * other
+                )
+        return new_matrix
+
+    def __truediv__(self, other):
+        "Divide this matrix by a scalar"
+        return self.__mul__(1./other)
 
     @property
     def rows(self):
@@ -632,6 +647,18 @@ class MergedModel(MD3Model):
             newz = surface.vertices[index].z
             newn = surface.vertices[index].n
             # Apply rotation
+            if transform is not None:
+                # Convert the vertex position to a one-column matrix
+                convert_matrix = Matrix(3, 3) / MD3_XYZ_SCALE
+                vertex_matrix = (
+                    convert_matrix @ Matrix(1, 3, [[newx], [newy], [newz]]))
+                normal_matrix = (
+                    Matrix(1, 3, [[co] for co in MD3Normal.decode(newn)]))
+                transform_matrix = transform.rotation_matrix()
+                vertex_matrix = transform_matrix @ vertex_matrix
+                normal_matrix = transform_matrix @ normal_matrix
+                newx, newy, newz = vertex_matrix.column(0)
+                newn = MD3Normal.encode(normal_matrix.column(0))
             # Apply position
             newx += transform.position.x
             newy += transform.position.y
