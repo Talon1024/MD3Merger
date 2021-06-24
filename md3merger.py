@@ -5,7 +5,7 @@ import struct
 import io
 from collections import namedtuple
 from array import array
-from math import atan2, acos, pi, sqrt
+from math import atan2, acos, cos, sin, pi, sqrt, radians
 
 # Constants for MD3
 MAX_QPATH = 64
@@ -116,7 +116,6 @@ class MD3Normal:
 
     @staticmethod
     def decode_euler(lat=0, lng=0):
-        from math import cos, sin, pi
         lat *= pi / 128
         lng *= pi / 128
         normal = Cartesian(
@@ -128,11 +127,45 @@ class MD3Normal:
 
 
 class Matrix:
-    def __init__(self, dimension=(3, 3), elements=None):
-        pass
-    
+
+    def __init__(self, rows=3, columns=3, elements=None):
+        self.elements = []
+        for row in range(rows):
+            self.elements.append([0] * columns)
+            # Identity matrix
+            if rows == columns:
+                self.elements[row][row] = 1
+        if elements is not None:
+            self.elements[0:len(elements)] = elements[:]
+
     def __matmul__(self, other):
-        pass
+        if not isinstance(other, Matrix):
+            return None
+        if self.columns != other.rows:
+            return None
+        new_matrix = Matrix(self.rows, other.columns)
+        for row in range(self.rows):
+            for col in range(other.columns):
+                # Multiply the row of the first by the column of the second
+                row_vector = self.row(row)
+                column_vector = other.column(col)
+                new_matrix.elements[row][col] = (
+                    sum(map(lambda a, b: a * b, row_vector, column_vector)))
+        return new_matrix
+
+    @property
+    def rows(self):
+        return len(self.elements)
+
+    @property
+    def columns(self):
+        return len(self.elements[0])
+    
+    def row(self, row_index):
+        return self.elements[row_index]
+    
+    def column(self, column_index):
+        return [x[column_index] for x in self.elements]
 
 
 class Transform:
@@ -145,18 +178,39 @@ class Transform:
         self.angle = angle
         self.pitch = pitch
         self.roll = roll
-    
+
     def angle_matrix(self):
-        pass
+        # Z rotation matrix
+        rotation = Matrix(3, 3)
+        theta = radians(self.angle)
+        rotation.elements[0][0] = cos(theta)
+        rotation.elements[0][1] = -sin(theta)
+        rotation.elements[1][0] = sin(theta)
+        rotation.elements[1][1] = cos(theta)
+        return rotation
 
     def pitch_matrix(self):
-        pass
+        # X rotation matrix
+        rotation = Matrix(3, 3)
+        theta = radians(self.pitch)
+        rotation.elements[1][1] = cos(theta)
+        rotation.elements[1][2] = -sin(theta)
+        rotation.elements[2][1] = sin(theta)
+        rotation.elements[2][2] = cos(theta)
+        return rotation
 
     def roll_matrix(self):
-        pass
+        # Y rotation matrix
+        rotation = Matrix(3, 3)
+        theta = radians(self.roll)
+        rotation.elements[0][0] = cos(theta)
+        rotation.elements[0][2] = sin(theta)
+        rotation.elements[2][0] = -sin(theta)
+        rotation.elements[2][2] = cos(theta)
+        return rotation
 
     def rotation_matrix(self):
-        pass
+        return self.angle_matrix() @ self.pitch_matrix() @ self.roll_matrix()
 
 
 class MD3Model:
@@ -387,7 +441,8 @@ class MD3Surface:
         vert_count = len(self.vertices)
         return vert_count % base_vert_count == 0
 
-    def get_frames(self):
+    @property
+    def frames(self):
         # Texture coordinates and vertices are "parallel arrays" for the first
         # frame, so the number of frames can be calculated by dividing the
         # length of the texture coordinates by the length of the vertices
@@ -401,12 +456,11 @@ class MD3Surface:
         data = bytearray(b"IDP3" + md3_string(self.texture, MAX_QPATH))
         tri_count = len(self.triangles)
         tc_count = len(self.texcoords)
-        frame_count = self.get_frames()
         # The first "0" represents the "flags", which seem to be unused in the
         # MD3 format. The "1" is the number of surfaces, and I don't see why
         # there needs to be any more than 1. Also, tc_count is used instead of
         # vert_count because tc_count is the number of vertices for one frame
-        data += struct.pack("<5i", 0, frame_count, 1, tc_count, tri_count)
+        data += struct.pack("<5i", 0, self.frames, 1, tc_count, tri_count)
         shaders_offset = len(data)
         shader_data = (
             md3_string(self.texture, MAX_QPATH) +
@@ -556,7 +610,7 @@ class MergedModel(MD3Model):
 
     def fix_surface_animations(self, surface):
         # Ensure a surface has the required amount of frames
-        surface_frames = surface.get_frames()
+        surface_frames = surface.frames
         if surface_frames != self.surface_frames:
             # Surface has more frames, so truncate the animation
             if surface_frames > self.surface_frames:
