@@ -240,6 +240,7 @@ class MD3Model:
         data += struct.pack("<i", 15)  # Version
         data += md3_string(self.name, MAX_QPATH)  # Name
         data += struct.pack("<i", 0)  # Flags
+        self.preprocess()
         data += struct.pack(
             "<iii",
             len(self.frames),  # of frames
@@ -265,7 +266,6 @@ class MD3Model:
             surfaces_offset,
             eof_offset
         )
-        self.preprocess()
         for frame in self.frames:
             data += frame.get_data()
         for tag in self.tags:
@@ -608,7 +608,7 @@ class MD3Surface:
 
 
 class MergedModel(MD3Model):
-    def __init__(self, max_frames=-1, name=b""):
+    def __init__(self, max_frames=None, name=b""):
         super().__init__(name)
         self.max_frames = max_frames
         self.surface_frames = 0  # Number of frames each surface should have
@@ -672,13 +672,18 @@ class MergedModel(MD3Model):
             surflist.append(surface)
         self.surfaces.append(surface)
         self.surface_transforms.append(transform)
+        if surface.frames > self.surface_frames:
+            self.surface_frames = surface.frames
+            if (self.max_frames is not None and
+                    self.surface_frames > self.max_frames):
+                self.surface_frames = self.max_frames
 
     def preprocess(self):
         # Pre-process surfaces: apply transformations, and fix the animations
         for surface, transform in zip(self.surfaces, self.surface_transforms):
             self.apply_transform(surface, transform)
             self.fix_surface_animations(surface)
-        # Rebuild surfaces and frames
+        # Rebuild surfaces
         self.surfaces = []
         self.frames = []
         for texture, surflist in self.texture_surfaces.items():
