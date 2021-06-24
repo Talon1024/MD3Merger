@@ -189,7 +189,7 @@ class Transform:
                  angle=0,
                  pitch=0,
                  roll=0):
-        self.position = Cartesian(position)
+        self.position = Cartesian(*position)
         self.angle = angle
         self.pitch = pitch
         self.roll = roll
@@ -289,7 +289,7 @@ class MD3Model:
         pass
 
     def clone(self):
-        new_model = MD3Model(self.name)
+        new_model = MD3Model(self.name.decode("utf-8"))
         new_model.surfaces = [s.clone() for s in self.surfaces]
         new_model.frames = self.frames[:]
         new_model.tags = self.tags[:]
@@ -344,7 +344,7 @@ class MD3Model:
             DataReadInfo(offset_surfaces, read_surfaces, num_surfaces),
         )
 
-        model = MD3Model(name)
+        model = MD3Model(name.decode("utf-8"))
 
         for info in data_read_infos:
             stream.seek(md3_start + info.offset)
@@ -481,13 +481,13 @@ class MD3Surface:
             md3_string(self.texture, MAX_QPATH) +
             struct.pack("<i", 0))
         tri_data = b"".join([
-            struct.pack("<3i", tri) for tri in self.triangles
+            struct.pack("<3i", *tri) for tri in self.triangles
         ])
         vert_data = b"".join([
-            struct.pack("<4h", vert) for vert in self.vertices
+            struct.pack("<4h", *vert) for vert in self.vertices
         ])
         tc_data = b"".join([
-            struct.pack("<2f", tc) for tc in self.texcoords
+            struct.pack("<2f", *tc) for tc in self.texcoords
         ])
         tris_offset = shaders_offset + len(shader_data)
         tc_offset = tris_offset + len(tri_data)
@@ -514,7 +514,7 @@ class MD3Surface:
         return size
 
     def clone(self):
-        new_surface = MD3Surface(self.texture.decode())
+        new_surface = MD3Surface(self.texture.decode("utf-8"))
         new_surface.triangles = self.triangles[:]
         new_surface.vertices = self.vertices[:]
         new_surface.texcoords = self.texcoords[:]
@@ -551,7 +551,7 @@ class MD3Surface:
             tris = []
             while count > 0:
                 tri = struct.unpack("<3i", stream.read(12))
-                tris.append(MD3Triangle(tri))
+                tris.append(MD3Triangle(*tri))
                 count -= 1
             return {
                 "type": "triangles",
@@ -563,7 +563,7 @@ class MD3Surface:
             tcs = []
             while count > 0:
                 tc = struct.unpack("<2f", stream.read(8))
-                tcs.append(MD3Texcoord(tc))
+                tcs.append(MD3Texcoord(*tc))
                 count -= 1
             return {
                 "type": "texcoords",
@@ -574,7 +574,7 @@ class MD3Surface:
             verts = []
             while count > 0:
                 vertex = struct.unpack("<4h", stream.read(8))
-                verts.append(MD3Vertex(vertex))
+                verts.append(MD3Vertex(*vertex))
                 count -= 1
             return {
                 "type": "vertices",
@@ -659,10 +659,11 @@ class MergedModel(MD3Model):
                 normal_matrix = transform_matrix @ normal_matrix
                 newx, newy, newz = vertex_matrix.column(0)
                 newn = MD3Normal.encode(normal_matrix.column(0))
-            # Apply position
-            newx += transform.position.x
-            newy += transform.position.y
-            newz += transform.position.z
+                # Apply position
+                newx += transform.position.x
+                newy += transform.position.y
+                newz += transform.position.z
+            # I think the vertex should be copied regardless
             surface.vertices[index] = MD3Vertex(newx, newy, newz, newn)
 
     def add_surface(self, surface, transform=None):
@@ -681,7 +682,7 @@ class MergedModel(MD3Model):
         self.surfaces = []
         self.frames = []
         for texture, surflist in self.texture_surfaces.items():
-            new_surface = MD3Surface(texture)
+            new_surface = MD3Surface(texture.decode())
             # Ensure triangles from each surface reference the correct vertex
             tri_add = 0
             # Add triangles and UVs from the surface - these are only for the
@@ -690,7 +691,8 @@ class MergedModel(MD3Model):
                 new_surface.texcoords += surface.texcoords
                 for tri in surface.triangles:
                     new_tri = (vertex + tri_add for vertex in tri)
-                    new_surface.triangles += new_tri
+                    new_tri = MD3Triangle(*new_tri)
+                    new_surface.triangles.append(new_tri)
                 tri_add += len(surface.triangles)
             # Add vertices from each frame in each surface
             for frame in range(self.surface_frames):
