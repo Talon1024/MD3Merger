@@ -5,7 +5,7 @@ import struct
 import io
 from collections import namedtuple
 from array import array
-from math import atan2, acos, cos, sin, pi, sqrt, radians
+from math import atan2, acos, cos, floor, sin, pi, sqrt, radians
 
 # Constants for MD3
 MAX_QPATH = 64
@@ -107,6 +107,11 @@ class MD3Normal:
                 else:
                     lng, lat = 0, 128
         return struct.pack("<2B", lat, lng)
+
+    @staticmethod
+    def encode_number(normal=(0, 0, 0), gzdoom=True):
+        latlongbytes = MD3Normal.encode(normal, gzdoom)
+        return struct.unpack("<h", latlongbytes)[0]
 
     @staticmethod
     def decode(latlong=0):
@@ -466,6 +471,7 @@ class MD3Surface:
         return vert_count // tc_count
 
     def get_data(self):
+        self.preprocess()
         if not self.is_valid():
             return b""
         data = bytearray(b"IDP3" + md3_string(self.texture, MAX_QPATH))
@@ -520,6 +526,9 @@ class MD3Surface:
         new_surface.vertices = self.vertices[:]
         new_surface.texcoords = self.texcoords[:]
         return new_surface
+
+    def preprocess(self):
+        pass
 
     @staticmethod
     def from_stream(stream):
@@ -650,27 +659,29 @@ class MergedModel(MD3Model):
             # Apply rotation
             if transform is not None:
                 # Convert the vertex position to a one-column matrix
-                convert_matrix = Matrix(3, 3) / MD3_XYZ_SCALE
-                vertex_matrix = (
-                    convert_matrix @ Matrix(1, 3, [[newx], [newy], [newz]]))
+                # convert_matrix = Matrix(3, 3) / MD3_XYZ_SCALE
+                vertex_matrix = Matrix(1, 3, [[newx], [newy], [newz]])
                 normal_matrix = (
                     Matrix(1, 3, [[co] for co in MD3Normal.decode(newn)]))
                 transform_matrix = transform.rotation_matrix()
                 vertex_matrix = transform_matrix @ vertex_matrix
                 normal_matrix = transform_matrix @ normal_matrix
                 newx, newy, newz = vertex_matrix.column(0)
-                newn = MD3Normal.encode(normal_matrix.column(0))
+                newn = MD3Normal.encode_number(normal_matrix.column(0))
                 # Apply position
-                newx += transform.position.x
-                newy += transform.position.y
-                newz += transform.position.z
+                newx += transform.position.x * MD3_XYZ_SCALE
+                newy += transform.position.y * MD3_XYZ_SCALE
+                newz += transform.position.z * MD3_XYZ_SCALE
+            # The transformation could have converted the XYZ values to floats
+            newx, newy, newz = map(
+                lambda x: int(floor(x)),
+                (newx, newy, newz))
             # I think the vertex should be copied regardless
             surface.vertices[index] = MD3Vertex(newx, newy, newz, newn)
 
     def add_surface(self, surface, transform=None):
-        if surface.texture not in self.texture_surfaces:
-            surflist = self.texture_surfaces.setdefault(surface.texture, [])
-            surflist.append(surface)
+        surflist = self.texture_surfaces.setdefault(surface.texture, [])
+        surflist.append(surface)
         self.surfaces.append(surface)
         self.surface_transforms.append(transform)
         if surface.frames > self.surface_frames:
@@ -694,12 +705,12 @@ class MergedModel(MD3Model):
             # Add triangles and UVs from the surface - these are only for the
             # first frame.
             for surface in surflist:
-                new_surface.texcoords += surface.texcoords
                 for tri in surface.triangles:
                     new_tri = (vertex + tri_add for vertex in tri)
                     new_tri = MD3Triangle(*new_tri)
                     new_surface.triangles.append(new_tri)
-                tri_add += len(surface.triangles)
+                tri_add += len(surface.texcoords)
+                new_surface.texcoords += surface.texcoords
             # Add vertices from each frame in each surface
             for frame in range(self.surface_frames):
                 for surface in surflist:
