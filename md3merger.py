@@ -160,10 +160,10 @@ class Matrix:
     @property
     def columns(self):
         return len(self.elements[0])
-    
+
     def row(self, row_index):
         return self.elements[row_index]
-    
+
     def column(self, column_index):
         return [x[column_index] for x in self.elements]
 
@@ -272,7 +272,7 @@ class MD3Model:
     # So that this can be overridden by sub-classes
     def preprocess(self):
         pass
-    
+
     def clone(self):
         new_model = MD3Model(self.name)
         new_model.surfaces = [s.clone() for s in self.surfaces]
@@ -321,7 +321,7 @@ class MD3Model:
                 "type": "surfaces",
                 "surfaces": surfaces
             }
-        
+
         DataReadInfo = namedtuple("DataReadInfo", "offset function count")
         data_read_infos = (
             DataReadInfo(offset_frames, read_frames, num_frames),
@@ -410,7 +410,7 @@ class MD3Tag:
 
     def get_size(self):
         return 112  # 4 * 12 + MAX_QPATH
-    
+
     @staticmethod
     def from_stream(stream):
         name = unmd3_string(stream.read(MAX_QPATH)).decode("utf-8")
@@ -478,8 +478,9 @@ class MD3Surface:
         tc_offset = tris_offset + len(tri_data)
         verts_offset = tc_offset + len(tc_data)
         end_offset = verts_offset + len(vert_data)
-        data += struct.pack("<5i",
-            tris_offset, shaders_offset, tc_offset, verts_offset, end_offset)
+        data += struct.pack(
+            "<5i", tris_offset, shaders_offset,
+            tc_offset, verts_offset, end_offset)
         data += shader_data
         data += tri_data
         data += tc_data
@@ -496,7 +497,7 @@ class MD3Surface:
         size += tc_count * 8  # Texture coordinates - 2 floats each
         size += vert_count * 8  # Vertex positions - 4 shorts each
         return size
-    
+
     def clone(self):
         new_surface = MD3Surface(self.texture.decode())
         new_surface.triangles = self.triangles[:]
@@ -583,7 +584,7 @@ class MD3Surface:
             data_value = data[data_type]
             setattr(surface, data_type, data_value)
         return surface
-    
+
     @staticmethod
     def from_bytes(data):
         with io.BytesIO(data) as stream:
