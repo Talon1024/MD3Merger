@@ -19,47 +19,6 @@ MAX_QPATH = 64
 MD3_XYZ_SCALE = 64
 
 
-class Vector2:
-    @staticmethod
-    def from_bytes(data):
-        return struct.unpack("<2f", data)
-
-    @staticmethod
-    def to_bytes(x, y):
-        return struct.pack("<2f", x, y)
-
-
-class Vector3:
-    @staticmethod
-    def from_bytes(data):
-        return struct.unpack("<3f", data)
-
-    @staticmethod
-    def to_bytes(x, y, z):
-        return struct.pack("<3f", x, y, z)
-
-
-# Different input/output format than Vector3
-class MD3Vector:
-    @staticmethod
-    def from_bytes(data):
-        ox, oy, oz = struct.unpack("<3h", data)
-        return MD3Vector.from_raw(ox, oy, oz)
-
-    @staticmethod
-    def from_raw(ox, oy, oz):
-        x, y, z = tuple(map(
-            lambda x: x / MD3_XYZ_SCALE, (ox, oy, oz)
-        ))
-        return x, y, z
-
-    @staticmethod
-    def to_bytes(ox, oy, oz):
-        x, y, z = tuple(map(
-            lambda x: x * MD3_XYZ_SCALE, (ox, oy, oz)))
-        return struct.pack("<3h", x, y, z)
-
-
 def md3_string(data, length, terminate=False):
     "Given a bytes object, return a fixed-size bytes object"
     if terminate:
@@ -398,9 +357,9 @@ class MD3Model:
 class MD3Frame:
     def __init__(self,
                  radius=0,
-                 origin=(0,0,0),
-                 bounds_min=(0,0,0),
-                 bounds_max=(0,0,0),
+                 origin=(0, 0, 0),
+                 bounds_min=(0, 0, 0),
+                 bounds_max=(0, 0, 0),
                  name=""):
         self.name = name.encode("utf-8")
         self.radius = radius
@@ -409,9 +368,9 @@ class MD3Frame:
         self.bounds_max = bounds_max
 
     def get_data(self):
-        data = bytearray(Vector3.to_bytes(*self.bounds_min))
-        data += Vector3.to_bytes(*self.bounds_max)
-        data += Vector3.to_bytes(*self.origin)
+        data = bytearray(struct.pack("<3f", *self.bounds_min))
+        data += struct.pack("<3f", *self.bounds_max)
+        data += struct.pack("<3f", *self.origin)
         data += struct.pack("<f", self.radius)
         data += md3_string(self.name, 16)
         return bytes(data)
