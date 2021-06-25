@@ -173,6 +173,27 @@ class Matrix:
         "Divide this matrix by a scalar"
         return self.__mul__(1./other)
 
+    def __getitem__(self, key):
+        return self.elements[key]
+
+    def __str__(self):
+        number_strings = []
+        for row in self.elements:
+            for number in row:
+                number_strings.append("{: .4f}".format(float(number)))
+        max_number_length = max(map(len, number_strings))
+        row_format_str = (
+            "[" +
+            "{{:^{}}}".format(max_number_length) * self.columns +
+            "]\n"
+        )
+        out = ""
+        for row_index in range(self.rows):
+            number_index = row_index * self.columns
+            row = number_strings[number_index : number_index + self.columns]
+            out += row_format_str.format(*row)
+        return out
+
     @property
     def rows(self):
         return len(self.elements)
@@ -190,44 +211,53 @@ class Matrix:
 
 class Transform:
     def __init__(self,
-                 position=(0,0,0),
+                 position=(0, 0, 0),
                  angle=0,
                  pitch=0,
-                 roll=0):
+                 roll=0,
+                 scale=(1, 1, 1)):
         self.position = Cartesian(*position)
         self.angle = angle
         self.pitch = pitch
         self.roll = roll
+        self.scale = Cartesian(*scale)
 
     def angle_matrix(self):
         # Z rotation matrix
         rotation = Matrix(3, 3)
         theta = radians(self.angle)
-        rotation.elements[0][0] = cos(theta)
-        rotation.elements[0][1] = -sin(theta)
-        rotation.elements[1][0] = sin(theta)
-        rotation.elements[1][1] = cos(theta)
+        rotation[0][0] = cos(theta)
+        rotation[0][1] = -sin(theta)
+        rotation[1][0] = sin(theta)
+        rotation[1][1] = cos(theta)
         return rotation
 
     def pitch_matrix(self):
         # X rotation matrix
         rotation = Matrix(3, 3)
         theta = radians(self.pitch)
-        rotation.elements[1][1] = cos(theta)
-        rotation.elements[1][2] = -sin(theta)
-        rotation.elements[2][1] = sin(theta)
-        rotation.elements[2][2] = cos(theta)
+        rotation[1][1] = cos(theta)
+        rotation[1][2] = -sin(theta)
+        rotation[2][1] = sin(theta)
+        rotation[2][2] = cos(theta)
         return rotation
 
     def roll_matrix(self):
         # Y rotation matrix
         rotation = Matrix(3, 3)
         theta = radians(self.roll)
-        rotation.elements[0][0] = cos(theta)
-        rotation.elements[0][2] = sin(theta)
-        rotation.elements[2][0] = -sin(theta)
-        rotation.elements[2][2] = cos(theta)
+        rotation[0][0] = cos(theta)
+        rotation[0][2] = sin(theta)
+        rotation[2][0] = -sin(theta)
+        rotation[2][2] = cos(theta)
         return rotation
+
+    def scale_matrix(self):
+        # Assign values to the diagonal
+        scale = Matrix()
+        for index, value in enumerate(self.scale):
+            scale[index][index] = value
+        return scale
 
     def rotation_matrix(self):
         return self.angle_matrix() @ self.pitch_matrix() @ self.roll_matrix()
@@ -658,9 +688,9 @@ class MergedModel(MD3Model):
             newn = surface.vertices[index].n
             # Apply rotation
             if transform is not None:
-                # Convert the vertex position to a one-column matrix
-                # convert_matrix = Matrix(3, 3) / MD3_XYZ_SCALE
+                scale_matrix = transform.scale_matrix()
                 vertex_matrix = Matrix(1, 3, [[newx], [newy], [newz]])
+                vertex_matrix = scale_matrix @ vertex_matrix
                 normal_matrix = (
                     Matrix(1, 3, [[co] for co in MD3Normal.decode(newn)]))
                 transform_matrix = transform.rotation_matrix()
