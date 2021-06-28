@@ -887,7 +887,17 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description="Merge multiple Quake 3 MD3 models")
-    parser.add_argument("models", nargs="+", type=model_argument)
+    parser.add_argument("models", nargs="+", type=model_argument, help="""
+    The input models. Each model is of the form:
+
+    model.md3[@x][@y][@z][|a][|p][|r][%%sx][%%sy][%%sz]
+
+    It's basically the filename, followed by a transformation specification,
+    which is a bunch of numbers prefixed by either an at sign (@), a pipe
+    character (|), or a percent sign (%%), and which represent position,
+    orientation, and scale respectively. The numbers and the symbols can be
+    given in any order.
+    """)
     parser.add_argument("--frames", type=int, help="Maximum animation frames")
     parser.add_argument("out_model", help="The output MD3 file")
     parsed_args = parser.parse_args()
