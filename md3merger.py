@@ -1,4 +1,32 @@
 #!/usr/bin/env python3
+"""Utilities for reading and writing Quake 3 MD3 models, and merging them
+together.
+
+Classes:
+Matrix - Used for creating matrices and doing matrix multiplication with them
+Transform - Generalization of transformations to apply, and building matrices
+    for those transformations
+MD3Model - Represents an MD3 model header/container
+MD3Frame - Represents information about a frame for an MD3 model
+MD3Tag - Represents a tag (attachment position) for an MD3 model
+MD3Surface - Represents geometry data for an MD3 model
+MergedModel - Allows more than one MD3 model to be merged together
+
+Functions:
+md3_string - Convert a bytes object to a fixed-length bytes object
+unmd3_string - Convert a fixed-length string to a bytes object
+
+Named tuples:
+Cartesian - Represents X, Y, and Z coordinates in 3D right-handed Cartesian
+    space
+MD3Triangle - Container for MD3 triangle data (three vertex indices)
+MD3Texcoord - Container for MD3 texture coordinate data (two floats)
+MD3Vertex - Container for MD3 vertex data (position and normal)
+
+Constants:
+MAX_QPATH - The maximum number of characters in a shader path or name
+MD3_XYZ_SCALE - The conversion factor from Cartesian to MD3 coordinates
+"""
 # Merge two or more MD3 models together
 import argparse
 import struct
@@ -40,8 +68,20 @@ Cartesian = namedtuple("Cartesian", "x y z")
 
 
 class MD3Normal:
+    """Utilities to encode and decode normal vectors for MD3 vertices
+
+    Static methods:
+    encode - Convert a normal vector to two-byte MD3 normal format
+    encode_number - Convert a normal vector to a 16-bit MD3 normal integer
+    decode - Convert an MD3 normal integer to a normal vector
+    decode_euler - Convert a latitude/longitude to a normal vector
+    """
     @staticmethod
     def encode(normal=(0, 0, 0), gzdoom=True):
+        """Convert a normal vector to two-byte MD3 normal format
+
+        if gzdoom is true, special straight up/down normal vectors are not
+        modified"""
         normal = Cartesian(*normal)
 
         # Normalize vector
@@ -69,17 +109,20 @@ class MD3Normal:
 
     @staticmethod
     def encode_number(normal=(0, 0, 0), gzdoom=True):
+        "Convert a normal vector to a 16-bit MD3 normal integer"
         latlongbytes = MD3Normal.encode(normal, gzdoom)
         return struct.unpack("<h", latlongbytes)[0]
 
     @staticmethod
     def decode(latlong=0):
+        "Convert an MD3 normal integer to a normal vector"
         latlongbytes = struct.pack("<h", latlong)
         lng, lat = struct.unpack("<2b", latlongbytes)
         return MD3Normal.decode_euler(lat, lng)
 
     @staticmethod
     def decode_euler(lat=0, lng=0):
+        "Convert a latitude/longitude to a normal vector"
         lat *= pi / 128
         lng *= pi / 128
         normal = Cartesian(
@@ -91,7 +134,16 @@ class MD3Normal:
 
 
 class Matrix:
+    """A matrix of numbers, which can be multiplied with other matrices using
+    the @ operator, or multiplied by scalars using the * operator
 
+    Properties:
+    rows - The number of rows in this matrix
+    columns - The number of columns in this matrix
+
+    Methods:
+    row - Get the vector for the given row
+    column - Get the vector for the given column"""
     def __init__(self, rows=3, columns=3, elements=None):
         self.elements = []
         for row in range(rows):
@@ -155,20 +207,33 @@ class Matrix:
 
     @property
     def rows(self):
+        "Get the number of rows in this matrix"
         return len(self.elements)
 
     @property
     def columns(self):
+        "Get the number of columns in this matrix"
         return len(self.elements[0])
 
     def row(self, row_index):
+        "Get the vector for the given row in this matrix"
         return self.elements[row_index]
 
     def column(self, column_index):
+        "Get the vector for the given column in this matrix"
         return [x[column_index] for x in self.elements]
 
 
 class Transform:
+    """A helper which can build matrices for transformations
+
+    Methods:
+    angle_matrix - Generate a rotation matrix for a rotation on the Z axis
+    pitch_matrix - Generate a rotation matrix for a rotation on the X axis
+    roll_matrix - Generate a rotation matrix for a rotation on the Y axis
+    rotation_matrix - Generate a matrix for rotations on all axes
+    scale_matrix - Generate a scale matrix for this transformation's scale
+    """
     def __init__(self,
                  position=(0, 0, 0),
                  angle=0,
@@ -182,7 +247,7 @@ class Transform:
         self.scale = Cartesian(*scale)
 
     def angle_matrix(self):
-        # Z rotation matrix
+        "Generate a rotation matrix for a rotation on the Z axis"
         rotation = Matrix(3, 3)
         theta = radians(self.angle)
         rotation[0][0] = cos(theta)
@@ -192,7 +257,7 @@ class Transform:
         return rotation
 
     def pitch_matrix(self):
-        # X rotation matrix
+        "Generate a rotation matrix for a rotation on the X axis"
         rotation = Matrix(3, 3)
         theta = radians(self.pitch)
         rotation[1][1] = cos(theta)
@@ -202,7 +267,7 @@ class Transform:
         return rotation
 
     def roll_matrix(self):
-        # Y rotation matrix
+        "Generate a rotation matrix for a rotation on the Y axis"
         rotation = Matrix(3, 3)
         theta = radians(self.roll)
         rotation[0][0] = cos(theta)
@@ -212,6 +277,7 @@ class Transform:
         return rotation
 
     def scale_matrix(self):
+        "Generate a matrix for this transformation's scale on each axis"
         # Assign values to the diagonal
         scale = Matrix()
         for index, value in enumerate(self.scale):
@@ -219,6 +285,7 @@ class Transform:
         return scale
 
     def rotation_matrix(self):
+        "Generate a matrix for rotations on all axes"
         return self.angle_matrix() @ self.pitch_matrix() @ self.roll_matrix()
 
 
