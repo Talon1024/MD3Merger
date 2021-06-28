@@ -740,6 +740,8 @@ class MergedModel(MD3Model):
 
 
 if __name__ == "__main__":
+    from operator import eq
+    from itertools import starmap
     # Cache - re-use loaded models
     MD3Cache = {}
 
@@ -750,37 +752,31 @@ if __name__ == "__main__":
         else:
             model = MD3Model.from_stream(open(model_filename, "rb"))
             MD3Cache[model_filename] = model
-        transform = Transform(
-            (model_arg.x, model_arg.y, model_arg.z),
-            model_arg.yaw, model_arg.pitch, model_arg.roll
-        )
-        if all(map(lambda x: x == 0, model_arg[1:])):
+        if all(starmap(eq, zip(model_arg[1:], MODEL_ARGUMENT_DEFAULTS))):
             transform = None
+        else:
+            transform = Transform(
+                (model_arg.x, model_arg.y, model_arg.z),
+                model_arg.yaw, model_arg.pitch, model_arg.roll,
+                (model_arg.sx, model_arg.sy, model_arg.sz)
+            )
         return model.clone(), transform
 
     ParsedModelArgument = namedtuple(
-        "ParsedModelArgument", "filename x y z yaw pitch roll")
-
-
-    class MyQueue:
-        def __init__(self, data=[], index=0):
-            self.data = data
-            self.index = index
-
-        def add(self, element):
-            if self.index < len(self.data):
-                self.data[self.index] = element
-            else:
-                self.data.append(element)
-            self.index += 1
+        "ParsedModelArgument", "filename x y z yaw pitch roll sx sy sz")
+    MODEL_ARGUMENT_DEFAULTS = (
+        0, 0, 0,  # Position
+        0, 0, 0,  # Orientation
+        1, 1, 1)  # Scale
 
 
     def model_argument(argument):
         # argument.md3@x@y@z|y|p|r
         filename_length = 0
         coordinates = {
-            "@": MyQueue(["0", "0", "0"]),
-            "|": MyQueue(["0", "0", "0"])
+            "@": [],
+            "|": [],
+            "%": []
         }
         subarguments = []
         coordinate_start = 0
@@ -802,11 +798,24 @@ if __name__ == "__main__":
         # Parse sub-arguments
         for element in subarguments:
             element_type = element[0]
-            coordinates[element_type].add(element[1:])
+            coordinates[element_type].append(element[1:])
         filename = argument[0:filename_length]
-        x, y, z = tuple(map(float, coordinates["@"].data))
-        yaw, pitch, roll = tuple(map(float, coordinates["|"].data))
-        return ParsedModelArgument(filename, x, y, z, yaw, pitch, roll)
+        # Ensure each list in "coordinates" has at least 3 members
+        for coordkey in coordinates:
+            excess = 0
+            if coordkey == "%":
+                excess = 1
+            coordinates[coordkey] += (
+                [excess] * (3 - len(coordinates[coordkey]))
+            )
+        x, y, z = tuple(map(float, coordinates["@"]))
+        yaw, pitch, roll = tuple(map(float, coordinates["|"]))
+        sx, sy, sz = tuple(map(float, coordinates["%"]))
+        return ParsedModelArgument(
+            filename,
+            x, y, z,
+            yaw, pitch, roll,
+            sx, sy, sz)
 
 
     parser = argparse.ArgumentParser(
