@@ -34,6 +34,7 @@ import io
 from collections import namedtuple
 from array import array
 from math import atan2, acos, cos, floor, sin, pi, sqrt, radians
+from operator import mul
 
 # Constants for MD3
 MAX_QPATH = 64
@@ -45,6 +46,11 @@ MAX_QPATH = 64
 # MD3_MAX_VERTS = 4096
 # MD3_MAX_TRIANGLES = 8192
 MD3_XYZ_SCALE = 64
+
+
+def sqr(number):
+    "Square a number"
+    return number * number
 
 
 def md3_string(data, length, terminate=False):
@@ -167,7 +173,7 @@ class Matrix:
                 row_vector = self.row(row)
                 column_vector = other.column(col)
                 new_matrix.elements[row][col] = (
-                    sum(map(lambda a, b: a * b, row_vector, column_vector)))
+                    sum(map(mul, row_vector, column_vector)))
         return new_matrix
 
     def __mul__(self, other):
@@ -798,8 +804,8 @@ class MergedModel(MD3Model):
             bounds_max = [max(co) / MD3_XYZ_SCALE for co in coords]
             frame_name = self.frame_names.setdefault(frame_num, "")
             radius = max(
-                sqrt(sum(map(lambda a: a * a, bounds_min))),
-                sqrt(sum(map(lambda a: a * a, bounds_max))),
+                sqrt(sum(map(sqr, bounds_min))),
+                sqrt(sum(map(sqr, bounds_max))),
             )
             frame = MD3Frame(
                 radius, (0, 0, 0), bounds_min, bounds_max, frame_name)
