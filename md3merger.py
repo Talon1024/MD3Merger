@@ -34,7 +34,7 @@ import io
 from collections import namedtuple
 from array import array
 from math import atan2, acos, cos, floor, sin, pi, sqrt, radians
-from operator import mul
+from operator import mul, eq, sub, itemgetter
 
 # Constants for MD3
 MAX_QPATH = 64
@@ -687,6 +687,7 @@ class MergedModel(MD3Model):
         self.texture_surfaces = {}
         self.frame_names = {}
         self.surface_transforms = []
+        self.check = False
 
     def add_model(self, model, transform=None):
         for surface in model.surfaces:
@@ -721,10 +722,10 @@ class MergedModel(MD3Model):
             # Apply rotation
             if transform is not None:
                 scale_matrix = transform.scale_matrix()
-                vertex_matrix = Matrix(1, 3, [[newx], [newy], [newz]])
+                vertex_matrix = Matrix(3, 1, [[newx], [newy], [newz]])
                 vertex_matrix = scale_matrix @ vertex_matrix
                 normal_matrix = (
-                    Matrix(1, 3, [[co] for co in MD3Normal.decode(newn)]))
+                    Matrix(3, 1, [[co] for co in MD3Normal.decode(newn)]))
                 transform_matrix = transform.rotation_matrix()
                 vertex_matrix = transform_matrix @ vertex_matrix
                 normal_matrix = transform_matrix @ normal_matrix
@@ -751,6 +752,68 @@ class MergedModel(MD3Model):
             if (self.max_frames is not None and
                     self.surface_frames > self.max_frames):
                 self.surface_frames = self.max_frames
+
+    def check_bounds(self, min_xyz=-32768, max_xyz=32768):
+        """
+        Ensure all vertices are within the bounds. Returns a transform,
+        or None if all vertices for all frames are within the bounds.
+        """
+        def dmap(fun, keys, *dicts):
+            """
+            Apply a function to the values for the keys in the given
+            subscriptables, yielding the results.
+            """
+            for key in keys:
+                getter = itemgetter(key)
+                val = fun(map(getter, dicts))
+                yield key, val
+        # Starting point
+        coords = "x", "y", "z"
+        for surface in self.surfaces:
+            for vertex in surface.vertices:
+                # if vertex.x > largest[0]:
+                #     largest[0] = vertex.x
+                # ...
+                # if vertex.x < smallest[0]:
+                #     smallest[0] = vertex.x
+                # ...
+                largest = dict(dmap(max, coords, largest, vertex))
+                smallest = dict(dmap(min, coords, smallest, vertex))
+        def midval(a, b):
+            """
+            Get a number in between the two given numbers which, if subtracted
+            from the originals, will result in numbers of the same magnitude.
+            """
+            return (a + b) / 2
+        def within(a, b):
+            """
+            Check whether the magnitude of a is less than that of b, and
+            return 0 if it is.
+            """
+            return max(0, abs(a) - abs(b))
+        maxd = {coord: max_xyz for coord in coords}
+        mind = {coord: min_xyz for coord in coords}
+        largest_d = dict(dmap(within, coords, largest, maxd))
+        smallest_d = dict(dmap(within, coords, smallest, mind))
+        differences = *largest_d.values(), *smallest_d.values()
+        if all(map(eq, differences, [0] * 6)):
+            # All vertices are within the bounds
+            return None
+        fix_vector = Cartesian(
+            *map(midval,
+                 (largest[co] for co in coords),
+                 (smallest[co] for co in coords)
+                )
+        )
+        bounds_fix = Transform(fix_vector)
+        # Is re-positioning the model enough?
+        fixed_mags = dict(dmap(sub, coords, largest, fix_vector._asdict()))
+        differences = map(within, fixed_mags.values(), [max_xyz] * 3)
+        # The magnitudes for the "smallest" will be the same
+        if all(map(eq, differences, [0] * 3)):
+            # No scale
+            return bounds_fix
+        return bounds_fix
 
     def preprocess(self):
         # Pre-process surfaces: apply transformations, and fix the animations
@@ -783,6 +846,12 @@ class MergedModel(MD3Model):
                             (frame + 1) * verts_per_frame
                         ])
             self.surfaces.append(new_surface)
+        # Ensure all vertices are within the bounds
+        bounds_fix = None
+        if self.check:
+            bounds_fix = self.check_bounds()
+        for surface in self.surfaces:
+            self.apply_transform(surface, bounds_fix)
         # Rebuild frames
         for frame_num in range(self.surface_frames):
             x_coords = array("h")
@@ -813,7 +882,6 @@ class MergedModel(MD3Model):
 
 
 if __name__ == "__main__":
-    from operator import eq
     from itertools import starmap
     # Cache - re-use loaded models
     MD3Cache = {}
@@ -905,12 +973,17 @@ if __name__ == "__main__":
     given in any order.
     """)
     parser.add_argument("--frames", type=int, help="Maximum animation frames")
+    parser.add_argument("--check", help="""
+    Automatically move and scale the combined model to fit within the MD3
+    coordinate boundaries if it doesn't already.
+    """, action="store_true", default=False)
     parser.add_argument("out_model", help="The output MD3 file")
     parsed_args = parser.parse_args()
 
     in_models = map(add_model, parsed_args.models)
 
     out_model = MergedModel(parsed_args.frames, parsed_args.out_model)
+    out_model.check = parsed_args.check
     for in_model in in_models:
         out_model.add_model(in_model[0], in_model[1])
     out_filename = parsed_args.out_model
